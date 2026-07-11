@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../viewmodels/library_viewmodel.dart';
 import '../theme/app_theme.dart';
-import '../models/library_models.dart';
 
 class MemberView extends StatefulWidget {
   const MemberView({super.key});
@@ -13,89 +12,88 @@ class MemberView extends StatefulWidget {
 
 class _MemberViewState extends State<MemberView> {
   final nameCtrl = TextEditingController();
-
-  // Untuk Input Anggota Baru
-  String selectedJenjang = 'SD';
+  String? selectedJenjang;
   final List<String> jenjangList = ['TK', 'SD', 'SMP', 'SMA', 'Umum'];
 
-  // Untuk Filter Tampilan Anggota
-  String filterJenjang = 'Semua';
-  final List<String> filterList = ['Semua', 'TK', 'SD', 'SMP', 'SMA', 'Umum'];
+  // Variabel untuk menyimpan kata kunci pencarian
+  String searchQuery = '';
 
-  // Dialog Edit Anggota
-  void _showEditMemberDialog(
+  void _showMemberDialog(
     BuildContext context,
-    LibraryViewModel vm,
-    Member member,
-  ) {
-    final editNameCtrl = TextEditingController(text: member.name);
-    String editJenjang = member.jenjang;
+    LibraryViewModel vm, {
+    var member,
+  }) {
+    if (member != null) {
+      nameCtrl.text = member.name;
+      selectedJenjang = member.jenjang;
+    } else {
+      nameCtrl.clear();
+      selectedJenjang = null;
+    }
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text(
-            'Edit Data Anggota',
-            style: TextStyle(color: AppTheme.primary),
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          member == null ? 'Tambah Anggota Baru' : 'Edit Data Anggota',
+          style: const TextStyle(
+            color: AppTheme.primary,
+            fontWeight: FontWeight.bold,
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: editNameCtrl,
-                decoration: const InputDecoration(labelText: 'Nama Lengkap'),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Nama Lengkap (Sesuai KTP/KK/Kartu Pelajar)',
               ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: editJenjang,
-                decoration: const InputDecoration(labelText: 'Jenjang'),
-                items: jenjangList
-                    .map((j) => DropdownMenuItem(value: j, child: Text(j)))
-                    .toList(),
-                onChanged: (val) => setDialogState(() => editJenjang = val!),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Batal', style: TextStyle(color: Colors.grey)),
+              textCapitalization: TextCapitalization.words,
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: selectedJenjang,
+              decoration: const InputDecoration(
+                labelText: 'Jenjang Pendidikan',
               ),
-              onPressed: () {
-                if (editNameCtrl.text.isNotEmpty) {
-                  vm.editMember(member.id, editNameCtrl.text, editJenjang);
-                  Navigator.pop(ctx);
-                }
-              },
-              child: const Text(
-                'Simpan',
-                style: TextStyle(color: Colors.white),
-              ),
+              items: jenjangList
+                  .map((j) => DropdownMenuItem(value: j, child: Text(j)))
+                  .toList(),
+              onChanged: (val) => setState(() => selectedJenjang = val),
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+            onPressed: () {
+              if (nameCtrl.text.isNotEmpty && selectedJenjang != null) {
+                if (member == null) {
+                  vm.addMember(nameCtrl.text, selectedJenjang!);
+                } else {
+                  vm.editMember(member.id, nameCtrl.text, selectedJenjang!);
+                }
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('Simpan', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }
 
-  // Dialog Hapus Anggota
-  void _confirmDeleteMember(
-    BuildContext context,
-    LibraryViewModel vm,
-    Member member,
-  ) {
+  void _confirmDelete(BuildContext context, LibraryViewModel vm, var member) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Hapus Anggota', style: TextStyle(color: Colors.red)),
-        content: Text(
-          'Hapus "${member.name}" (${member.memberCode}) secara permanen?',
-        ),
+        content: Text('Hapus ${member.name} dari daftar keanggotaan?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -126,221 +124,181 @@ class _MemberViewState extends State<MemberView> {
   Widget build(BuildContext context) {
     final vm = Provider.of<LibraryViewModel>(context);
 
-    // Logika Filter Jenjang
-    final filteredMembers = filterJenjang == 'Semua'
-        ? vm.members
-        : vm.members.where((m) => m.jenjang == filterJenjang).toList();
+    // LOGIKA PENCARIAN REAL-TIME
+    // Menyaring anggota berdasarkan Nama atau Kode Anggota yang diketik
+    final filteredMembers = vm.members.where((m) {
+      final query = searchQuery.toLowerCase();
+      final nameLower = m.name.toLowerCase();
+      final codeLower = m.memberCode.toLowerCase();
+
+      return nameLower.contains(query) || codeLower.contains(query);
+    }).toList();
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          // PANEL TAMBAH ANGGOTA
-          Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Nama Lengkap'),
+          // KOTAK PENCARIAN (SEARCH BAR)
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
+              ],
+            ),
+            child: TextField(
+              onChanged: (value) {
+                // Memperbarui UI setiap kali ada huruf yang diketik
+                setState(() {
+                  searchQuery = value;
+                });
+              },
+              decoration: InputDecoration(
+                hintText: 'Cari nama warga atau nomor anggota yang lupa...',
+                prefixIcon: const Icon(Icons.search, color: AppTheme.primary),
+                suffixIcon: searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: Colors.grey),
+                        onPressed: () {
+                          setState(() {
+                            searchQuery = '';
+                            // Hapus fokus dari keyboard jika tombol X ditekan (opsional)
+                            FocusScope.of(context).unfocus();
+                          });
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: selectedJenjang,
-                  decoration: const InputDecoration(labelText: 'Jenjang'),
-                  items: jenjangList
-                      .map((j) => DropdownMenuItem(value: j, child: Text(j)))
-                      .toList(),
-                  onChanged: (val) => setState(() => selectedJenjang = val!),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.primary,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.person_add_alt_1, color: Colors.white),
-                  onPressed: () {
-                    if (nameCtrl.text.isNotEmpty) {
-                      vm.addMember(nameCtrl.text, selectedJenjang);
-                      nameCtrl.clear();
-                      FocusScope.of(context).unfocus();
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-
-          const Divider(height: 30, thickness: 1),
-
-          // FILTER ANGGOTA
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Daftar Anggota',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textDark,
-                ),
-              ),
-              SizedBox(
-                width: 140,
-                child: DropdownButtonFormField<String>(
-                  value: filterJenjang,
-                  decoration: const InputDecoration(
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    labelText: 'Filter',
-                  ),
-                  items: filterList
-                      .map((f) => DropdownMenuItem(value: f, child: Text(f)))
-                      .toList(),
-                  onChanged: (val) => setState(() => filterJenjang = val!),
-                ),
-              ),
-            ],
+            ),
           ),
 
           const SizedBox(height: 16),
 
-          // DAFTAR ANGGOTA (DENGAN TRACK RECORD)
+          // TOMBOL TAMBAH ANGGOTA
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              icon: const Icon(Icons.person_add, color: Colors.white),
+              label: const Text(
+                'Daftarkan Anggota Baru',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              onPressed: () => _showMemberDialog(context, vm),
+            ),
+          ),
+
+          const Divider(height: 40, thickness: 1),
+
+          // DAFTAR ANGGOTA (HASIL PENCARIAN)
           Expanded(
             child: filteredMembers.isEmpty
-                ? const Center(child: Text('Tidak ada anggota di jenjang ini.'))
+                ? const Center(
+                    child: Text(
+                      'Tidak ada anggota yang cocok dengan pencarian.',
+                      style: TextStyle(color: Colors.grey, fontSize: 16),
+                    ),
+                  )
                 : ListView.builder(
                     itemCount: filteredMembers.length,
-                    itemBuilder: (context, i) {
-                      final member = filteredMembers[i];
-                      final stats = vm.getMemberStats(
-                        member.memberCode,
-                      ); // Mengambil Track Record
+                    itemBuilder: (context, index) {
+                      final member = filteredMembers[index];
+                      // Ambil statistik peminjaman warga ini untuk ditampilkan
+                      final stats = vm.getMemberStats(member.memberCode);
 
                       return Card(
-                        margin: const EdgeInsets.only(bottom: 16),
+                        margin: const EdgeInsets.only(bottom: 12),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        elevation: 2,
-                        child: Column(
-                          children: [
-                            ListTile(
-                              contentPadding: const EdgeInsets.only(
-                                left: 16,
-                                right: 8,
-                                top: 8,
-                              ),
-                              leading: const CircleAvatar(
-                                backgroundColor: AppTheme.secondary,
-                                child: Icon(Icons.person, color: Colors.white),
-                              ),
-                              title: Text(
-                                member.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              subtitle: Text(
+                        elevation: 1.5,
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
+                          leading: CircleAvatar(
+                            backgroundColor: AppTheme.primary.withOpacity(0.15),
+                            radius: 24,
+                            child: const Icon(
+                              Icons.person,
+                              color: AppTheme.primary,
+                              size: 28,
+                            ),
+                          ),
+                          title: Text(
+                            member.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 4),
+                              Text(
                                 'ID: ${member.memberCode} | Jenjang: ${member.jenjang}',
                               ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.edit_outlined,
-                                      color: AppTheme.primary,
-                                    ),
-                                    onPressed: () => _showEditMemberDialog(
-                                      context,
-                                      vm,
-                                      member,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.delete_outline,
-                                      color: Colors.redAccent,
-                                    ),
-                                    onPressed: () => _confirmDeleteMember(
-                                      context,
-                                      vm,
-                                      member,
-                                    ),
-                                  ),
-                                ],
+                              const SizedBox(height: 4),
+                              // Indikator keaktifan baca warga
+                              Text(
+                                'Aktif Pinjam: ${stats['monthly']} buku (Bulan ini)',
+                                style: TextStyle(
+                                  color: Colors.teal.shade600,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                            const Divider(height: 1),
-                            // BAGIAN BADGE TRACK RECORD
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.edit,
+                                  color: Colors.blueAccent,
+                                ),
+                                onPressed: () => _showMemberDialog(
+                                  context,
+                                  vm,
+                                  member: member,
+                                ),
                               ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  _buildStatBadge(
-                                    'Hari Ini',
-                                    stats['daily'].toString(),
-                                    Colors.orange.shade300,
-                                  ),
-                                  _buildStatBadge(
-                                    'Minggu Ini',
-                                    stats['weekly'].toString(),
-                                    Colors.blue.shade300,
-                                  ),
-                                  _buildStatBadge(
-                                    'Bulan Ini',
-                                    stats['monthly'].toString(),
-                                    Colors.green.shade300,
-                                  ),
-                                ],
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.redAccent,
+                                ),
+                                onPressed: () =>
+                                    _confirmDelete(context, vm, member),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       );
                     },
                   ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Widget Kustom untuk Badge Statistik
-  Widget _buildStatBadge(String label, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.5)),
-      ),
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: color.withOpacity(0.9),
-            ),
-          ),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 10, color: Colors.black54),
           ),
         ],
       ),
