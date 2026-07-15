@@ -33,7 +33,6 @@ class LibraryViewModel extends ChangeNotifier {
     }
 
     _books = dbBooks;
-    // Pastikan daftar buku selalu tersortir rapi berdasarkan nomor kode panggilnya
     _books.sort((a, b) => a.bookCode.compareTo(b.bookCode));
 
     for (var book in _books) {
@@ -191,89 +190,142 @@ class LibraryViewModel extends ChangeNotifier {
     return val.toString();
   }
 
-  // --- FIX SORTIR OPTIMIZATION: Disortir berdasarkan klasifikasi sebelum auto-numbering ---
+  // --- UPDATE MASTER: DYNAMIC HEADER MAPPING & MULTI-SHEET SCANNING ---
   String importFromExcelBytes(List<int> bytes) {
     try {
       var excel = Excel.decodeBytes(bytes);
       int importedBooks = 0;
       int importedMembers = 0;
+      List<Map<String, String>> temporaryBooksRows = [];
 
-      if (excel.tables.containsKey('Data Buku')) {
-        var table = excel.tables['Data Buku']!;
-        List<Map<String, String>> temporaryRows = [];
+      // Loop menyeluruh ke setiap sheet yang ada di dalam workbook
+      for (var sheetName in excel.tables.keys) {
+        // Abaikan sheet jika itu adalah sheet data anggota atau rekap data
+        if (sheetName.toLowerCase().contains('anggota') ||
+            sheetName.toLowerCase().contains('rekap')) {
+          continue;
+        }
 
-        // 1. Kumpulkan seluruh data mentah baris Excel
+        var table = excel.tables[sheetName]!;
+        if (table.maxRows <= 1) continue;
+
+        // 1. Deteksi Posisi Index Kolom secara Otomatis dari Baris Header (Baris 1)
+        int titleIdx = -1;
+        int classIdx = -1;
+        int subjectIdx = -1;
+        int authorIdx = -1;
+
+        var headerRow = table.rows[0];
+        for (int col = 0; col < headerRow.length; col++) {
+          String headerText = _parseCellValue(
+            headerRow[col],
+          ).trim().toLowerCase();
+
+          if (headerText.contains('judul')) titleIdx = col;
+          if (headerText.contains('klasifikasi')) classIdx = col;
+          if (headerText.contains('subjek')) subjectIdx = col;
+          if (headerText.contains('pengarang') ||
+              headerText.contains('penulis'))
+            authorIdx = col;
+        }
+
+        // Jika kolom wajib (Judul & Klasifikasi) tidak ditemukan di sheet ini, lewati sheet tersebut
+        if (titleIdx == -1 || classIdx == -1) continue;
+
+        // 2. Ambil Data Wajib Saja dari baris ke-2 hingga selesai
         for (int i = 1; i < table.maxRows; i++) {
           var row = table.rows[i];
-          if (row.length >= 1) {
-            String title = _parseCellValue(row[0]);
-            if (title.isEmpty) continue;
+          if (row.length > titleIdx) {
+            String title = _parseCellValue(row[titleIdx]).trim();
+            if (title.isEmpty) continue; // Lewati jika baris kosong
 
-            String clsf = row.length >= 2
-                ? _parseCellValue(row[1]).trim().toUpperCase()
-                : 'A';
-            String sbjt = row.length >= 3 ? _parseCellValue(row[2]) : '300';
-            String auth = row.length >= 4 ? _parseCellValue(row[3]) : '-';
+            String clsf = _parseCellValue(row[classIdx]).trim().toUpperCase();
+            if (clsf.isEmpty) continue;
 
-            temporaryRows.add({
+            String sbjt = (subjectIdx != -1 && row.length > subjectIdx)
+                ? _parseCellValue(row[subjectIdx]).trim()
+                : '300';
+            String auth = (authorIdx != -1 && row.length > authorIdx)
+                ? _parseCellValue(row[authorIdx]).trim()
+                : '-';
+
+            temporaryBooksRows.add({
               'title': title,
-              'classification': clsf.isEmpty ? 'A' : clsf,
+              'classification': clsf,
               'subject': sbjt.isEmpty ? '300' : sbjt,
               'author': auth.isEmpty ? '-' : auth,
+              'sortKey':
+                  '$clsf-${DateTime.now().ticks.toString()}-$i', // Kunci pembantu untuk menjaga keaslian urutan
             });
           }
         }
-
-        // 2. PROSES SORTIR UTAMA: Urutkan data Excel berdasarkan Klasifikasi (A -> B1 -> B2 dst.)
-        temporaryRows.sort(
-          (a, b) => a['classification']!.compareTo(b['classification']!),
-        );
-
-        // 3. Masukkan ke database dengan penomoran urut yang sudah rapi tersortir
-        for (int i = 0; i < temporaryRows.length; i++) {
-          var item = temporaryRows[i];
-          String clsf = item['classification']!;
-
-          int currentClassCount = _books
-              .where((b) => b.classification == clsf)
-              .length;
-          int nextNumber = currentClassCount + 1;
-          // Menggunakan padLeft(3, '0') agar menghasilkan kode standar rapi seperti B2-001
-          String autoBookCode =
-              '$clsf-${nextNumber.toString().padLeft(3, '0')}';
-
-          final newBook = Book(
-            id: DateTime.now().millisecondsSinceEpoch.toString() + i.toString(),
-            bookCode: autoBookCode,
-            title: item['title']!,
-            classification: clsf,
-            subject: item['subject']!,
-            author: item['author']!,
-          );
-
-          _books.add(newBook);
-          DatabaseHelper.instance.insertBook(newBook);
-          addClassification(clsf);
-          importedBooks++;
-        }
       }
 
-      if (excel.tables.containsKey('Data Anggota')) {
-        var table = excel.tables['Data Anggota']!;
-        for (int i = 1; i < table.maxRows; i++) {
-          var row = table.rows[i];
+      // 3. PROSES URUTKAN (STABLE SORTING) seluruh data buku gabungan antar sheet
+      temporaryBooksRows.sort((a, b) {
+        int cmp = a['classification']!.compareTo(b['classification']!);
+        if (cmp != 0) return cmp;
+        return a['sortKey']!.compareTo(b['sortKey']!);
+      });
+
+      // 4. Input ke Database Lokal SQLite dengan Nomor Seri Otomatis yang Sempurna
+      for (int i = 0; i < temporaryBooksRows.length; i++) {
+        var item = temporaryBooksRows[i];
+        String clsf = item['classification']!;
+
+        // Proteksi Duplikasi: Cek apakah judul buku yang sama sudah pernah diinput sebelumnya
+        if (_books.any(
+          (b) =>
+              b.title.toLowerCase() == item['title']!.toLowerCase() &&
+              b.classification == clsf,
+        )) {
+          continue;
+        }
+
+        int currentClassCount = _books
+            .where((b) => b.classification == clsf)
+            .length;
+        int nextNumber = currentClassCount + 1;
+        String autoBookCode = '$clsf-${nextNumber.toString().padLeft(3, '0')}';
+
+        final newBook = Book(
+          id:
+              DateTime.now().millisecondsSinceEpoch.toString() +
+              i.toString() +
+              clsf,
+          bookCode: autoBookCode,
+          title: item['title']!,
+          classification: clsf,
+          subject: item['subject']!,
+          author: item['author']!,
+        );
+
+        _books.add(newBook);
+        DatabaseHelper.instance.insertBook(newBook);
+        addClassification(clsf);
+        importedBooks++;
+      }
+
+      // --- IMPORT DATA ANGGOTA (Dijalankan jika file memuat sheet khusus Anggota) ---
+      var memberTable = excel.tables['Data Anggota'] ?? excel.tables['Sheet2'];
+      if (memberTable != null) {
+        for (int i = 1; i < memberTable.maxRows; i++) {
+          var row = memberTable.rows[i];
           if (row.length >= 2) {
-            String code = _parseCellValue(row[0]);
-            String name = _parseCellValue(row[1]);
+            String code = _parseCellValue(row[0]).trim();
+            String name = _parseCellValue(row[1]).trim();
             if (code.isEmpty || name.isEmpty) continue;
 
-            String jnjg = row.length >= 3 ? _parseCellValue(row[2]) : 'SD';
+            String jnjg = row.length >= 3
+                ? _parseCellValue(row[2]).trim()
+                : 'SD';
 
             if (!_members.any((m) => m.memberCode == code)) {
               final newMember = Member(
                 id:
                     DateTime.now().millisecondsSinceEpoch.toString() +
-                    i.toString(),
+                    i.toString() +
+                    "M",
                 memberCode: code,
                 name: name,
                 jenjang: jnjg.isEmpty ? 'SD' : jnjg,
@@ -286,7 +338,6 @@ class LibraryViewModel extends ChangeNotifier {
         }
       }
 
-      // Pastikan list internal selalu terurut rapi setelah ada penambahan data baru
       _books.sort((a, b) => a.bookCode.compareTo(b.bookCode));
       notifyListeners();
       return 'Berhasil Mengimpor $importedBooks Buku & $importedMembers Anggota!';
@@ -450,4 +501,9 @@ class LibraryViewModel extends ChangeNotifier {
       return 'Buku tidak ditemukan.';
     }
   }
+}
+
+// Ekstensi pembantu tick waktu internal
+extension on DateTime {
+  int get ticks => millisecondsSinceEpoch * 10000;
 }

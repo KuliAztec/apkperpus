@@ -42,7 +42,7 @@ class DashboardView extends StatelessWidget {
 
     String? outputFile = await FilePicker.platform.saveFile(
       dialogTitle: 'Simpan Backup Data Excel:',
-      fileName: 'Backup_Perpustakaan_Widyaloka.xlsx',
+      fileName: 'Backup_Perpustakaan_Widya_Loka.xlsx',
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
     );
@@ -80,7 +80,7 @@ class DashboardView extends StatelessWidget {
         children: [
           // JUDUL UTAMA
           const Text(
-            'Perpustakaan Widyaloka Desa Nusawungu',
+            'Perpustakaan Widya Loka Desa Nusawungu',
             style: TextStyle(
               fontSize: 30,
               fontWeight: FontWeight.bold,
