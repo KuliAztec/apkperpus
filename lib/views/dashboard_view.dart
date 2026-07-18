@@ -16,23 +16,41 @@ class DashboardView extends StatelessWidget {
     );
 
     if (result != null) {
-      String msg = '';
-      if (result.files.single.bytes != null) {
-        msg = vm.importFromExcelBytes(result.files.single.bytes!);
-      } else if (result.files.single.path != null) {
-        final file = File(result.files.single.path!);
-        final bytes = await file.readAsBytes();
-        msg = vm.importFromExcelBytes(bytes);
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: msg.contains('Gagal')
-              ? Colors.red
-              : AppTheme.primary,
+      // Memunculkan Indikator Loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const Center(
+          child: CircularProgressIndicator(color: AppTheme.primary),
         ),
       );
+
+      String msg = '';
+      try {
+        if (result.files.single.bytes != null) {
+          msg = await vm.importFromExcelBytes(result.files.single.bytes!);
+        } else if (result.files.single.path != null) {
+          final file = File(result.files.single.path!);
+          final bytes = await file.readAsBytes();
+          msg = await vm.importFromExcelBytes(bytes);
+        }
+      } catch (e) {
+        msg = 'Gagal memproses file Excel.';
+      }
+
+      // Tutup Indikator Loading
+      if (context.mounted) Navigator.pop(context);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: msg.contains('Gagal')
+                ? Colors.red
+                : AppTheme.primary,
+          ),
+        );
+      }
     }
   }
 
@@ -42,7 +60,7 @@ class DashboardView extends StatelessWidget {
 
     String? outputFile = await FilePicker.platform.saveFile(
       dialogTitle: 'Simpan Backup Data Excel:',
-      fileName: 'Backup_Perpustakaan_Widya_Loka.xlsx',
+      fileName: 'Backup_Perpustakaan_Widyaloka.xlsx',
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
     );
@@ -51,12 +69,14 @@ class DashboardView extends StatelessWidget {
       final file = File(outputFile);
       await file.writeAsBytes(bytes);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Data berhasil diexport ke format Excel!'),
-          backgroundColor: AppTheme.primary,
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Data berhasil diexport ke format Excel!'),
+            backgroundColor: AppTheme.primary,
+          ),
+        );
+      }
     }
   }
 
@@ -78,19 +98,19 @@ class DashboardView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // JUDUL UTAMA
           const Text(
-            'Perpustakaan Widya Loka Desa Nusawungu',
+            'Ikhtisar Perpustakaan',
             style: TextStyle(
-              fontSize: 30,
+              fontSize: 24,
               fontWeight: FontWeight.bold,
               color: AppTheme.textDark,
             ),
           ),
           const SizedBox(height: 16),
 
-          // TOMBOL EXCEL (Diturunkan ke bawah judul)
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
             children: [
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
@@ -106,7 +126,7 @@ class DashboardView extends StatelessWidget {
                   size: 20,
                 ),
                 label: const Text(
-                  'Import File Excel',
+                  'Import Excel',
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -114,7 +134,6 @@ class DashboardView extends StatelessWidget {
                 ),
                 onPressed: () => _handleImportExcel(context, vm),
               ),
-              const SizedBox(width: 12),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primary,
@@ -129,7 +148,7 @@ class DashboardView extends StatelessWidget {
                   size: 20,
                 ),
                 label: const Text(
-                  'Export File Excel',
+                  'Export Excel',
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -142,12 +161,11 @@ class DashboardView extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          // KARTU STATISTIK
           Row(
             children: [
               Expanded(
                 child: _buildModernStatCard(
-                  'Total Buku Perpus',
+                  'Total Buku',
                   vm.books.length.toString(),
                   Icons.menu_book_rounded,
                   Colors.purpleAccent,
@@ -179,7 +197,6 @@ class DashboardView extends StatelessWidget {
 
           const SizedBox(height: 32),
 
-          // HEADER GRAFIK
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -202,7 +219,6 @@ class DashboardView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // GRAFIK INTERAKTIF FL_CHART
           Container(
             height: 350,
             padding: const EdgeInsets.all(20),

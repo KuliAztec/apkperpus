@@ -17,10 +17,9 @@ class PrintBarcodeView extends StatefulWidget {
 
 class _PrintBarcodeViewState extends State<PrintBarcodeView> {
   String selectedClassification = 'Semua';
-  double qrSize = 55.0;
 
-  // Komponen pembuat 1 kotak stiker
-  pw.Widget _buildLabelCard(Book book, double currentQrSize) {
+  // KOMPONEN LABEL FIX UKURAN FISIK
+  pw.Widget _buildLabelCard(Book book) {
     String authorRaw = book.author.trim().toUpperCase();
     String authorCode = authorRaw.length >= 3
         ? authorRaw.substring(0, 3)
@@ -28,93 +27,98 @@ class _PrintBarcodeViewState extends State<PrintBarcodeView> {
     String titleRaw = book.title.trim().toUpperCase();
     String titleCode = titleRaw.isNotEmpty ? titleRaw.substring(0, 1) : '';
 
+    // MENGUNCI UKURAN DALAM SENTIMETER ASLI (4cm x 3cm)
+    final double cardWidth = 4.0 * PdfPageFormat.cm;
+    final double cardHeight = 3.0 * PdfPageFormat.cm;
+
     return pw.Container(
-      width: currentQrSize * 3.2,
-      padding: const pw.EdgeInsets.all(6),
+      width: cardWidth,
+      height: cardHeight,
+      padding: const pw.EdgeInsets.all(4),
       decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.black, width: 1.5),
+        border: pw.Border.all(color: PdfColors.black, width: 1.0),
       ),
       child: pw.Column(
         mainAxisSize: pw.MainAxisSize.min,
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
           pw.Container(
-            padding: const pw.EdgeInsets.symmetric(vertical: 3),
+            padding: const pw.EdgeInsets.symmetric(vertical: 2),
             decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: PdfColors.black, width: 1),
+              border: pw.Border.all(color: PdfColors.black, width: 0.5),
             ),
             child: pw.Text(
-              'Perpustakaan Widyaloka Nusawungu',
-              style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+              // Disingkat agar muat sempurna di dalam lebar fisik 4 cm
+              'Perpustakaan Widya Loka',
+              style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
               textAlign: pw.TextAlign.center,
             ),
           ),
-          pw.SizedBox(height: 5),
+          pw.SizedBox(height: 3),
 
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Container(
-                width: currentQrSize + 8,
-                height: currentQrSize + 8,
-                padding: const pw.EdgeInsets.all(3),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.black, width: 1),
-                ),
-                child: pw.Center(
+          pw.Expanded(
+            child: pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: [
+                // KOTAK QR CODE
+                pw.Container(
+                  width: 1.65 * PdfPageFormat.cm, // Lebar QR Code 1.65 cm
+                  height: 1.65 * PdfPageFormat.cm,
+                  padding: const pw.EdgeInsets.all(2),
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: PdfColors.black, width: 0.5),
+                  ),
                   child: pw.BarcodeWidget(
                     barcode: pw.Barcode.qrCode(),
                     data: book.bookCode,
-                    width: currentQrSize,
-                    height: currentQrSize,
                   ),
                 ),
-              ),
-              pw.SizedBox(width: 5),
+                pw.SizedBox(width: 4),
 
-              pw.Expanded(
-                child: pw.Container(
-                  height: currentQrSize + 8,
-                  padding: const pw.EdgeInsets.all(3),
-                  decoration: pw.BoxDecoration(
-                    border: pw.Border.all(color: PdfColors.black, width: 1),
-                  ),
-                  child: pw.Column(
-                    mainAxisAlignment: pw.MainAxisAlignment.center,
-                    crossAxisAlignment: pw.CrossAxisAlignment.center,
-                    children: [
-                      pw.Text(
-                        book.subject.toUpperCase(),
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
+                // KOTAK TEKS (SUBJEK, PENGARANG, JUDUL)
+                pw.Expanded(
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.all(2),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: PdfColors.black, width: 0.5),
+                    ),
+                    child: pw.Column(
+                      mainAxisAlignment: pw.MainAxisAlignment.center,
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
+                      children: [
+                        pw.Text(
+                          book.subject.toUpperCase(),
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                          textAlign: pw.TextAlign.center,
+                          maxLines: 1,
                         ),
-                        textAlign: pw.TextAlign.center,
-                        maxLines: 1,
-                      ),
-                      pw.SizedBox(height: 2),
-                      pw.Text(
-                        authorCode,
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          authorCode,
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                          textAlign: pw.TextAlign.center,
                         ),
-                        textAlign: pw.TextAlign.center,
-                      ),
-                      pw.SizedBox(height: 2),
-                      pw.Text(
-                        titleCode,
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          titleCode,
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                          textAlign: pw.TextAlign.center,
                         ),
-                        textAlign: pw.TextAlign.center,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -133,21 +137,20 @@ class _PrintBarcodeViewState extends State<PrintBarcodeView> {
               .where((b) => b.classification == selectedClassification)
               .toList();
 
-    // RUMUS CERDAS: Mencegah Kertas Kepenuhan (Anti-Crash)
-    // Menghitung berapa kotak yang muat dalam 1 baris ke samping
+    // RUMUS PERHITUNGAN BARIS OTOMATIS BERDASARKAN UKURAN KERTAS
+    final double spacing =
+        0.3 * PdfPageFormat.cm; // Spasi antar stiker 3 milimeter
+    final double cardWidthWithSpacing = (4.0 * PdfPageFormat.cm) + spacing;
     final double margins = 24.0 * 2;
     final double usableWidth = format.width - margins;
-    final double cardWidth =
-        (qrSize * 3.2) + 14.0; // 14 adalah jarak spasi antar kartu
 
-    int columnsCount = (usableWidth / cardWidth).floor();
+    int columnsCount = (usableWidth / cardWidthWithSpacing).floor();
     if (columnsCount < 1) columnsCount = 1;
 
     pdf.addPage(
       pw.MultiPage(
         pageFormat: format,
         margin: const pw.EdgeInsets.all(24),
-        // Header ini akan otomatis tercetak di setiap lembar baru
         header: (pw.Context context) {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -180,30 +183,28 @@ class _PrintBarcodeViewState extends State<PrintBarcodeView> {
         build: (context) {
           List<pw.Widget> rows = [];
 
-          // Memecah ratusan buku menjadi baris-baris.
-          // Jika tinggi kertas A4 sudah habis, MultiPage akan otomatis membuat halaman baru.
           for (int i = 0; i < books.length; i += columnsCount) {
             List<pw.Widget> rowChildren = [];
 
             for (int j = 0; j < columnsCount; j++) {
               if (i + j < books.length) {
-                rowChildren.add(_buildLabelCard(books[i + j], qrSize));
+                rowChildren.add(_buildLabelCard(books[i + j]));
               } else {
-                // Memberikan ruang kosong jika baris terakhir tidak genap
-                rowChildren.add(pw.SizedBox(width: qrSize * 3.2));
+                // Beri ruang kosong jika stiker terakhir di baris ganjil
+                rowChildren.add(pw.SizedBox(width: 4.0 * PdfPageFormat.cm));
               }
             }
 
             rows.add(
               pw.Padding(
-                padding: const pw.EdgeInsets.only(bottom: 14),
+                padding: pw.EdgeInsets.only(bottom: spacing),
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.start,
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: rowChildren
                       .map(
                         (w) => pw.Padding(
-                          padding: const pw.EdgeInsets.only(right: 14),
+                          padding: pw.EdgeInsets.only(right: spacing),
                           child: w,
                         ),
                       )
@@ -233,7 +234,7 @@ class _PrintBarcodeViewState extends State<PrintBarcodeView> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Cetak Label Buku (Standar)',
+          'Cetak Label Buku (3x4 cm)',
           style: TextStyle(color: Colors.white),
         ),
         backgroundColor: AppTheme.primary,
@@ -260,23 +261,26 @@ class _PrintBarcodeViewState extends State<PrintBarcodeView> {
                   ),
                 ),
                 const SizedBox(width: 24),
-                Expanded(
+                // Tampilan informasi ukuran yang terkunci
+                const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Ukuran Skala: ${qrSize.toInt()}',
-                        style: const TextStyle(
+                        'Ukuran Label Fisik:',
+                        style: TextStyle(
                           fontWeight: FontWeight.bold,
                           color: AppTheme.textDark,
                         ),
                       ),
-                      Slider(
-                        value: qrSize,
-                        min: 40,
-                        max: 90,
-                        activeColor: AppTheme.primary,
-                        onChanged: (val) => setState(() => qrSize = val),
+                      SizedBox(height: 4),
+                      Text(
+                        '4.0 cm x 3.0 cm',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: AppTheme.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ],
                   ),

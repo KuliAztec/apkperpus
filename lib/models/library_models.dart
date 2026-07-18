@@ -14,12 +14,12 @@ class Member {
 
 class Book {
   final String id;
-  final String
-  bookCode; // Tetap ada secara internal sebagai Nomor Inventaris Otomatis
+  final String bookCode; // Format: 0001H-2026 atau 0001B-2026
   final String title;
   final String classification;
   final String subject;
   final String author;
+  final String keterangan; // Menyimpan sumber/keterangan buku
   bool isBorrowed;
 
   Book({
@@ -29,6 +29,7 @@ class Book {
     required this.classification,
     required this.subject,
     required this.author,
+    required this.keterangan,
     this.isBorrowed = false,
   });
 }

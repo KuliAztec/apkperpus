@@ -10,6 +10,7 @@ class LibraryViewModel extends ChangeNotifier {
   final List<BorrowRecord> _borrowHistory = [];
 
   final List<String> _availableClassifications = ['A', 'B1', 'B2', 'B3', 'C'];
+  final List<String> _availableKeterangan = ['Hibah', 'Beli'];
 
   LibraryViewModel() {
     _initDatabaseFromDb();
@@ -38,6 +39,9 @@ class LibraryViewModel extends ChangeNotifier {
     for (var book in _books) {
       if (!_availableClassifications.contains(book.classification)) {
         _availableClassifications.add(book.classification);
+      }
+      if (!_availableKeterangan.contains(book.keterangan)) {
+        _availableKeterangan.add(book.keterangan);
       }
     }
 
@@ -72,6 +76,7 @@ class LibraryViewModel extends ChangeNotifier {
   List<Book> get books => _books;
   List<BorrowRecord> get records => _records;
   List<String> get availableClassifications => _availableClassifications;
+  List<String> get availableKeterangan => _availableKeterangan;
 
   Map<String, List<Book>> get booksByClassification {
     Map<String, List<Book>> map = {};
@@ -151,17 +156,23 @@ class LibraryViewModel extends ChangeNotifier {
     var excel = Excel.createExcel();
     Sheet sheetBooks = excel['Data Buku'];
     sheetBooks.appendRow([
+      TextCellValue('Nomor Inventaris'),
       TextCellValue('Judul Buku'),
       TextCellValue('Klasifikasi'),
       TextCellValue('Subjek'),
       TextCellValue('Penulis'),
+      TextCellValue('Keterangan'),
     ]);
     for (var book in _books) {
+      // Mengambil hanya angka dari kode buku untuk diekspor kembali sebagai Nomor Inventaris murni
+      String numOnly = book.bookCode.replaceAll(RegExp(r'[^0-9]'), '');
       sheetBooks.appendRow([
+        TextCellValue(numOnly),
         TextCellValue(book.title),
         TextCellValue(book.classification),
         TextCellValue(book.subject),
         TextCellValue(book.author),
+        TextCellValue(book.keterangan),
       ]);
     }
 
@@ -190,30 +201,30 @@ class LibraryViewModel extends ChangeNotifier {
     return val.toString();
   }
 
-  // --- UPDATE MASTER: DYNAMIC HEADER MAPPING & MULTI-SHEET SCANNING ---
-  String importFromExcelBytes(List<int> bytes) {
+  Future<String> importFromExcelBytes(List<int> bytes) async {
     try {
       var excel = Excel.decodeBytes(bytes);
       int importedBooks = 0;
       int importedMembers = 0;
-      List<Map<String, String>> temporaryBooksRows = [];
 
-      // Loop menyeluruh ke setiap sheet yang ada di dalam workbook
+      List<Map<String, String>> temporaryBooksRows = [];
+      List<Book> booksToInsertBatch = [];
+      List<Member> membersToInsertBatch = [];
+
       for (var sheetName in excel.tables.keys) {
-        // Abaikan sheet jika itu adalah sheet data anggota atau rekap data
         if (sheetName.toLowerCase().contains('anggota') ||
-            sheetName.toLowerCase().contains('rekap')) {
+            sheetName.toLowerCase().contains('rekap'))
           continue;
-        }
 
         var table = excel.tables[sheetName]!;
         if (table.maxRows <= 1) continue;
 
-        // 1. Deteksi Posisi Index Kolom secara Otomatis dari Baris Header (Baris 1)
+        int invIdx = -1; // Kolom Nomor Inventaris
         int titleIdx = -1;
         int classIdx = -1;
         int subjectIdx = -1;
         int authorIdx = -1;
+        int ketIdx = -1;
 
         var headerRow = table.rows[0];
         for (int col = 0; col < headerRow.length; col++) {
@@ -221,26 +232,33 @@ class LibraryViewModel extends ChangeNotifier {
             headerRow[col],
           ).trim().toLowerCase();
 
+          if (headerText.contains('inventaris')) invIdx = col;
           if (headerText.contains('judul')) titleIdx = col;
           if (headerText.contains('klasifikasi')) classIdx = col;
           if (headerText.contains('subjek')) subjectIdx = col;
           if (headerText.contains('pengarang') ||
               headerText.contains('penulis'))
             authorIdx = col;
+          if (headerText.contains('keterangan') ||
+              headerText.contains('sumber'))
+            ketIdx = col;
         }
 
-        // Jika kolom wajib (Judul & Klasifikasi) tidak ditemukan di sheet ini, lewati sheet tersebut
         if (titleIdx == -1 || classIdx == -1) continue;
 
-        // 2. Ambil Data Wajib Saja dari baris ke-2 hingga selesai
         for (int i = 1; i < table.maxRows; i++) {
           var row = table.rows[i];
           if (row.length > titleIdx) {
             String title = _parseCellValue(row[titleIdx]).trim();
-            if (title.isEmpty) continue; // Lewati jika baris kosong
+            if (title.isEmpty) continue;
 
             String clsf = _parseCellValue(row[classIdx]).trim().toUpperCase();
             if (clsf.isEmpty) continue;
+
+            // Mengambil Nomor Inventaris dari Excel (jika ada)
+            String invRaw = (invIdx != -1 && row.length > invIdx)
+                ? _parseCellValue(row[invIdx]).trim()
+                : '';
 
             String sbjt = (subjectIdx != -1 && row.length > subjectIdx)
                 ? _parseCellValue(row[subjectIdx]).trim()
@@ -248,45 +266,70 @@ class LibraryViewModel extends ChangeNotifier {
             String auth = (authorIdx != -1 && row.length > authorIdx)
                 ? _parseCellValue(row[authorIdx]).trim()
                 : '-';
+            String ket = (ketIdx != -1 && row.length > ketIdx)
+                ? _parseCellValue(row[ketIdx]).trim()
+                : 'Hibah';
+            if (ket.isEmpty) ket = 'Hibah';
 
             temporaryBooksRows.add({
+              'inventaris': invRaw,
               'title': title,
               'classification': clsf,
               'subject': sbjt.isEmpty ? '300' : sbjt,
               'author': auth.isEmpty ? '-' : auth,
-              'sortKey':
-                  '$clsf-${DateTime.now().ticks.toString()}-$i', // Kunci pembantu untuk menjaga keaslian urutan
+              'keterangan': ket,
+              'sortKey': '$clsf-${DateTime.now().ticks.toString()}-$i',
             });
           }
         }
       }
 
-      // 3. PROSES URUTKAN (STABLE SORTING) seluruh data buku gabungan antar sheet
       temporaryBooksRows.sort((a, b) {
         int cmp = a['classification']!.compareTo(b['classification']!);
         if (cmp != 0) return cmp;
         return a['sortKey']!.compareTo(b['sortKey']!);
       });
 
-      // 4. Input ke Database Lokal SQLite dengan Nomor Seri Otomatis yang Sempurna
+      // RUMUS PENCARI NOMOR INVENTARIS TERBESAR
+      int currentMaxInv = 0;
+      for (var b in _books) {
+        String numPart = b.bookCode.replaceAll(RegExp(r'[^0-9]'), '');
+        if (numPart.isNotEmpty) {
+          int val = int.tryParse(numPart) ?? 0;
+          if (val > currentMaxInv) currentMaxInv = val;
+        }
+      }
+
       for (int i = 0; i < temporaryBooksRows.length; i++) {
         var item = temporaryBooksRows[i];
         String clsf = item['classification']!;
+        String ket = item['keterangan']!;
 
-        // Proteksi Duplikasi: Cek apakah judul buku yang sama sudah pernah diinput sebelumnya
         if (_books.any(
           (b) =>
               b.title.toLowerCase() == item['title']!.toLowerCase() &&
               b.classification == clsf,
-        )) {
+        ))
           continue;
+
+        // LOGIKA PENOMORAN BARU: XXXX[KLASIFIKASI] (Cth: 0126B2)
+        String invRaw = item['inventaris']!;
+        String cleanInv = invRaw.replaceAll(
+          RegExp(r'[^0-9]'),
+          '',
+        ); // Buang huruf jika tak sengaja tertulis
+
+        if (cleanInv.isNotEmpty) {
+          // Jika nomor sudah terisi dari Excel, pakai nomor itu dan update MaxInv
+          int val = int.tryParse(cleanInv) ?? 0;
+          if (val > currentMaxInv) currentMaxInv = val;
+        } else {
+          // Jika kosong di Excel, otomatis lanjutkan dari angka terbesar
+          currentMaxInv++;
+          cleanInv = currentMaxInv.toString();
         }
 
-        int currentClassCount = _books
-            .where((b) => b.classification == clsf)
-            .length;
-        int nextNumber = currentClassCount + 1;
-        String autoBookCode = '$clsf-${nextNumber.toString().padLeft(3, '0')}';
+        String autoBookCode = '${cleanInv.padLeft(4, '0')}$clsf';
 
         final newBook = Book(
           id:
@@ -298,15 +341,20 @@ class LibraryViewModel extends ChangeNotifier {
           classification: clsf,
           subject: item['subject']!,
           author: item['author']!,
+          keterangan: ket,
         );
 
-        _books.add(newBook);
-        DatabaseHelper.instance.insertBook(newBook);
+        booksToInsertBatch.add(newBook);
         addClassification(clsf);
+        addKeterangan(ket);
         importedBooks++;
       }
 
-      // --- IMPORT DATA ANGGOTA (Dijalankan jika file memuat sheet khusus Anggota) ---
+      if (booksToInsertBatch.isNotEmpty) {
+        await DatabaseHelper.instance.insertBooksBatch(booksToInsertBatch);
+        _books.addAll(booksToInsertBatch);
+      }
+
       var memberTable = excel.tables['Data Anggota'] ?? excel.tables['Sheet2'];
       if (memberTable != null) {
         for (int i = 1; i < memberTable.maxRows; i++) {
@@ -320,7 +368,8 @@ class LibraryViewModel extends ChangeNotifier {
                 ? _parseCellValue(row[2]).trim()
                 : 'SD';
 
-            if (!_members.any((m) => m.memberCode == code)) {
+            if (!_members.any((m) => m.memberCode == code) &&
+                !membersToInsertBatch.any((m) => m.memberCode == code)) {
               final newMember = Member(
                 id:
                     DateTime.now().millisecondsSinceEpoch.toString() +
@@ -330,12 +379,16 @@ class LibraryViewModel extends ChangeNotifier {
                 name: name,
                 jenjang: jnjg.isEmpty ? 'SD' : jnjg,
               );
-              _members.add(newMember);
-              DatabaseHelper.instance.insertMember(newMember);
+              membersToInsertBatch.add(newMember);
               importedMembers++;
             }
           }
         }
+      }
+
+      if (membersToInsertBatch.isNotEmpty) {
+        await DatabaseHelper.instance.insertMembersBatch(membersToInsertBatch);
+        _members.addAll(membersToInsertBatch);
       }
 
       _books.sort((a, b) => a.bookCode.compareTo(b.bookCode));
@@ -355,19 +408,37 @@ class LibraryViewModel extends ChangeNotifier {
     }
   }
 
+  void addKeterangan(String newKeterangan) {
+    String formatted = newKeterangan.trim();
+    if (formatted.isNotEmpty && !_availableKeterangan.contains(formatted)) {
+      _availableKeterangan.add(formatted);
+      notifyListeners();
+    }
+  }
+
   void addBook(
     String title,
     String classification,
     String subject,
     String author,
+    String keterangan,
   ) async {
     String cleanClass = classification.trim().toUpperCase();
-    int currentClassCount = _books
-        .where((b) => b.classification == cleanClass)
-        .length;
-    int nextNumber = currentClassCount + 1;
+    String cleanKet = keterangan.trim();
+
+    // PENOMORAN MANUAL JUGA DISAMAKAN: Melanjutkan angka inventaris global terbesar
+    int currentMaxInv = 0;
+    for (var b in _books) {
+      String numPart = b.bookCode.replaceAll(RegExp(r'[^0-9]'), '');
+      if (numPart.isNotEmpty) {
+        int val = int.tryParse(numPart) ?? 0;
+        if (val > currentMaxInv) currentMaxInv = val;
+      }
+    }
+
+    currentMaxInv++;
     String autoBookCode =
-        '$cleanClass-${nextNumber.toString().padLeft(3, '0')}';
+        '${currentMaxInv.toString().padLeft(4, '0')}$cleanClass';
 
     final newBook = Book(
       id: DateTime.now().toString(),
@@ -376,6 +447,7 @@ class LibraryViewModel extends ChangeNotifier {
       classification: cleanClass,
       subject: subject,
       author: author,
+      keterangan: cleanKet,
     );
 
     _books.add(newBook);
@@ -503,7 +575,6 @@ class LibraryViewModel extends ChangeNotifier {
   }
 }
 
-// Ekstensi pembantu tick waktu internal
 extension on DateTime {
   int get ticks => millisecondsSinceEpoch * 10000;
 }
