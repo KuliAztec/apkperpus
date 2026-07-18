@@ -95,6 +95,7 @@ class _BookViewState extends State<BookView> {
   Widget build(BuildContext context) {
     final vm = Provider.of<LibraryViewModel>(context);
     final booksGrouped = vm.booksByClassification;
+
     if (selectedClassification == null &&
         vm.availableClassifications.isNotEmpty) {
       selectedClassification = vm.availableClassifications.first;
@@ -123,7 +124,7 @@ class _BookViewState extends State<BookView> {
                 child: TextField(
                   controller: subjectCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Nomor/Nama Subjek (Cth: 300 atau Komputer)',
+                    labelText: 'Nomor Subjek (Cth: 300)',
                   ),
                 ),
               ),
@@ -132,22 +133,21 @@ class _BookViewState extends State<BookView> {
                 child: TextField(
                   controller: authorCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Nama Penulis/Pengarang',
+                    labelText: 'Nama Pengarang',
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
+
+          // BARIS KLASIFIKASI (Sudah bebas dari Keterangan, tidak akan overflow)
           Row(
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
                   value: selectedClassification,
-                  decoration: const InputDecoration(
-                    labelText: 'Kode Klasifikasi Buku',
-                  ),
-                  // PERBAIKAN DI SINI: Langsung menampilkan kode klasifikasinya saja
+                  decoration: const InputDecoration(labelText: 'Klasifikasi'),
                   items: vm.availableClassifications
                       .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                       .toList(),
@@ -155,50 +155,61 @@ class _BookViewState extends State<BookView> {
                       setState(() => selectedClassification = val),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12), // Memberikan spasi yang lega
               Container(
                 decoration: BoxDecoration(
                   color: AppTheme.secondary.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.add, color: AppTheme.textDark),
-                  onPressed: () => _showAddClassificationDialog(context, vm),
-                ),
-              ),
-              const SizedBox(width: 16),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 16,
-                    horizontal: 20,
+                  icon: const Icon(
+                    Icons.add,
+                    color: AppTheme.textDark,
+                    size: 24,
                   ),
-                ),
-                onPressed: () {
-                  if (titleCtrl.text.isNotEmpty &&
-                      subjectCtrl.text.isNotEmpty &&
-                      authorCtrl.text.isNotEmpty &&
-                      selectedClassification != null) {
-                    vm.addBook(
-                      titleCtrl.text,
-                      selectedClassification!,
-                      subjectCtrl.text,
-                      authorCtrl.text,
-                    );
-                    titleCtrl.clear();
-                    subjectCtrl.clear();
-                    authorCtrl.clear();
-                  }
-                },
-                child: const Text(
-                  'Tambah Buku',
-                  style: TextStyle(color: Colors.white),
+                  onPressed: () => _showAddClassificationDialog(context, vm),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
+
+          // TOMBOL SUBMIT TAMBAH BUKU
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              onPressed: () {
+                if (titleCtrl.text.isNotEmpty &&
+                    subjectCtrl.text.isNotEmpty &&
+                    authorCtrl.text.isNotEmpty &&
+                    selectedClassification != null) {
+                  // Variabel keterangan otomatis dilempar sebagai 'Hibah' ke sistem
+                  vm.addBook(
+                    titleCtrl.text,
+                    selectedClassification!,
+                    subjectCtrl.text,
+                    authorCtrl.text,
+                    'Hibah',
+                  );
+                  titleCtrl.clear();
+                  subjectCtrl.clear();
+                  authorCtrl.clear();
+                }
+              },
+              child: const Text(
+                'Tambah Buku Baru',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
@@ -223,6 +234,8 @@ class _BookViewState extends State<BookView> {
             ),
           ),
           const Divider(height: 40, thickness: 1),
+
+          // DAFTAR BUKU
           Expanded(
             child: ListView.builder(
               itemCount: booksGrouped.length,
@@ -239,7 +252,6 @@ class _BookViewState extends State<BookView> {
                   child: ExpansionTile(
                     iconColor: AppTheme.primary,
                     collapsedIconColor: AppTheme.textDark,
-                    // PERBAIKAN DI SINI: Langsung menampilkan kode klasifikasi saja
                     title: Text(
                       '$classification (${booksInClass.length} Buku)',
                       style: const TextStyle(
@@ -268,7 +280,7 @@ class _BookViewState extends State<BookView> {
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         subtitle: Text(
-                          'No. Urut Label: ${book.bookCode} | Penulis: ${book.author}',
+                          'ID: ${book.bookCode} | Ket: ${book.keterangan}',
                         ),
                         trailing: IconButton(
                           icon: const Icon(

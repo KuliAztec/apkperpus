@@ -21,7 +21,6 @@ class DatabaseHelper {
   }
 
   Future _createDB(Database db, int version) async {
-    // 1. Tabel Anggota
     await db.execute('''
       CREATE TABLE members (
         id TEXT PRIMARY KEY,
@@ -31,7 +30,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // 2. Tabel Buku
     await db.execute('''
       CREATE TABLE books (
         id TEXT PRIMARY KEY,
@@ -40,11 +38,11 @@ class DatabaseHelper {
         classification TEXT,
         subject TEXT,
         author TEXT,
+        keterangan TEXT, 
         isBorrowed INTEGER
       )
     ''');
 
-    // 3. Tabel Riwayat Transaksi (Untuk kebutuhan Grafik & Track Record)
     await db.execute('''
       CREATE TABLE borrow_records (
         id TEXT PRIMARY KEY,
@@ -65,6 +63,21 @@ class DatabaseHelper {
       'name': member.name,
       'jenjang': member.jenjang,
     }, conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  // Fungsi Baru: Simpan Massal Anggota
+  Future<void> insertMembersBatch(List<Member> members) async {
+    final db = await instance.database;
+    Batch batch = db.batch();
+    for (var member in members) {
+      batch.insert('members', {
+        'id': member.id,
+        'memberCode': member.memberCode,
+        'name': member.name,
+        'jenjang': member.jenjang,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    await batch.commit(noResult: true);
   }
 
   Future<List<Member>> readAllMembers() async {
@@ -111,8 +124,28 @@ class DatabaseHelper {
       'classification': book.classification,
       'subject': book.subject,
       'author': book.author,
+      'keterangan': book.keterangan,
       'isBorrowed': book.isBorrowed ? 1 : 0,
     }, conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  // Fungsi Baru: Simpan Massal Buku (Mencegah Lag Ratusan Data)
+  Future<void> insertBooksBatch(List<Book> books) async {
+    final db = await instance.database;
+    Batch batch = db.batch();
+    for (var book in books) {
+      batch.insert('books', {
+        'id': book.id,
+        'bookCode': book.bookCode,
+        'title': book.title,
+        'classification': book.classification,
+        'subject': book.subject,
+        'author': book.author,
+        'keterangan': book.keterangan,
+        'isBorrowed': book.isBorrowed ? 1 : 0,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    await batch.commit(noResult: true);
   }
 
   Future<List<Book>> readAllBooks() async {
@@ -127,6 +160,7 @@ class DatabaseHelper {
             classification: json['classification'] as String,
             subject: json['subject'] as String,
             author: json['author'] as String,
+            keterangan: (json['keterangan'] ?? 'Hibah') as String,
             isBorrowed: json['isBorrowed'] == 1,
           ),
         )
